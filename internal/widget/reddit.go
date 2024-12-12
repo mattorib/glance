@@ -13,19 +13,20 @@ import (
 
 type Reddit struct {
 	widgetBase          `yaml:",inline"`
-	Posts               feed.ForumPosts `yaml:"-"`
-	Subreddit           string          `yaml:"subreddit"`
-	Style               string          `yaml:"style"`
-	ShowThumbnails      bool            `yaml:"show-thumbnails"`
-	ShowFlairs          bool            `yaml:"show-flairs"`
-	SortBy              string          `yaml:"sort-by"`
-	TopPeriod           string          `yaml:"top-period"`
-	Search              string          `yaml:"search"`
-	ExtraSortBy         string          `yaml:"extra-sort-by"`
-	CommentsUrlTemplate string          `yaml:"comments-url-template"`
-	Limit               int             `yaml:"limit"`
-	CollapseAfter       int             `yaml:"collapse-after"`
-	RequestUrlTemplate  string          `yaml:"request-url-template"`
+	Posts               feed.ForumPosts   `yaml:"-"`
+	Subreddit           string            `yaml:"subreddit"`
+	Style               string            `yaml:"style"`
+	ShowThumbnails      bool              `yaml:"show-thumbnails"`
+	ShowFlairs          bool              `yaml:"show-flairs"`
+	SortBy              string            `yaml:"sort-by"`
+	TopPeriod           string            `yaml:"top-period"`
+	Search              string            `yaml:"search"`
+	ExtraSortBy         string            `yaml:"extra-sort-by"`
+	CommentsUrlTemplate string            `yaml:"comments-url-template"`
+	Limit               int               `yaml:"limit"`
+	CollapseAfter       int               `yaml:"collapse-after"`
+	RequestUrlTemplate  string            `yaml:"request-url-template"`
+	Oauth               *feed.RedditOauth `yaml:"oauth"`
 }
 
 func (widget *Reddit) Initialize() error {
@@ -52,6 +53,13 @@ func (widget *Reddit) Initialize() error {
 	if widget.RequestUrlTemplate != "" {
 		if !strings.Contains(widget.RequestUrlTemplate, "{REQUEST-URL}") {
 			return errors.New("no `{REQUEST-URL}` placeholder specified")
+		}
+	}
+
+	if widget.Oauth != nil && widget.Oauth.ShouldAuthenticate() {
+		err := feed.TryAuthenticate(widget.Oauth)
+		if err != nil {
+			return err
 		}
 	}
 
@@ -89,6 +97,7 @@ func (widget *Reddit) Update(ctx context.Context) {
 		widget.CommentsUrlTemplate,
 		widget.RequestUrlTemplate,
 		widget.ShowFlairs,
+		widget.Oauth,
 	)
 
 	if !widget.canContinueUpdateAfterHandlingErr(err) {

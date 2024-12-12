@@ -1,6 +1,7 @@
 package feed
 
 import (
+	"errors"
 	"fmt"
 	"html"
 	"net/http"
@@ -36,6 +37,34 @@ type subredditResponseJson struct {
 	} `json:"data"`
 }
 
+type redditAccessTokenResponseJson struct {
+	AccessToken string `json:"access_token"`
+	ExpiresIn   int    `json:"expires_in"`
+	Scope       string `json:"scope"`
+	TokenType   string `json:"token_type"`
+}
+
+type RedditOauth struct {
+	ClientId     string    `yaml:"client-id"`
+	ClientSecret string    `yaml:"client-secret"`
+	Username     string    `yaml:"username"`
+	Password     string    `yaml:"password"`
+	UserAgent    string    `yaml:"user-agent"`
+	AccessToken  string    `yaml:"-"`
+	ExpiresAt    time.Time `yaml:"-"`
+}
+
+func (r *RedditOauth) ShouldAuthenticate() bool {
+	return r.ClientId != "" && r.ClientSecret != "" && r.Username != "" && r.Password != ""
+}
+
+func (r *RedditOauth) ShouldReauthenticate() bool {
+	if r.ExpiresAt.IsZero() {
+		return false
+	}
+	return !r.ExpiresAt.After(time.Now())
+}
+
 func templateRedditCommentsURL(template, subreddit, postId, postPath string) string {
 	template = strings.ReplaceAll(template, "{SUBREDDIT}", subreddit)
 	template = strings.ReplaceAll(template, "{POST-ID}", postId)
@@ -44,9 +73,52 @@ func templateRedditCommentsURL(template, subreddit, postId, postPath string) str
 	return template
 }
 
-func FetchSubredditPosts(subreddit, sort, topPeriod, search, commentsUrlTemplate, requestUrlTemplate string, showFlairs bool) (ForumPosts, error) {
+func TryAuthenticate(oauth *RedditOauth) error {
+	if oauth.ClientId != "" && oauth.ClientSecret != "" && oauth.Username != "" && oauth.Password != "" {
+		body := strings.NewReader(fmt.Sprintf(`grant_type=password&username=%s&password=%s`, oauth.Username, oauth.Password))
+		request, err := http.NewRequest("POST", "https://www.reddit.com/api/v1/access_token", body)
+		if err != nil {
+			return err
+		}
+		request.SetBasicAuth(oauth.ClientId, oauth.ClientSecret)
+		response, err := decodeJsonFromRequest[redditAccessTokenResponseJson](defaultClient, request)
+
+		if err != nil {
+			return err
+		}
+
+		if response.AccessToken == "" {
+			return errors.New("reddit access token undefined")
+		}
+
+		if response.ExpiresIn == 0 {
+			return errors.New("reddit expires in undefined")
+		}
+
+		oauth.AccessToken = response.AccessToken
+		oauth.ExpiresAt = time.Now().Add(time.Duration(response.ExpiresIn) * time.Second)
+	}
+
+	return nil
+}
+
+func FetchSubredditPosts(subreddit, sort, topPeriod, search, commentsUrlTemplate, requestUrlTemplate string, showFlairs bool, oauth *RedditOauth) (ForumPosts, error) {
 	query := url.Values{}
+	var baseRequestUrl string
 	var requestUrl string
+
+	useOauth := oauth != nil && oauth.AccessToken != ""
+	if useOauth {
+		baseRequestUrl = "https://oauth.reddit.com"
+		if oauth.ShouldReauthenticate() {
+			err := TryAuthenticate(oauth)
+			if err != nil {
+				return nil, err
+			}
+		}
+	} else {
+		baseRequestUrl = "https://reddit.com"
+	}
 
 	if search != "" {
 		query.Set("q", search+" subreddit:"+subreddit)
@@ -58,9 +130,9 @@ func FetchSubredditPosts(subreddit, sort, topPeriod, search, commentsUrlTemplate
 	}
 
 	if search != "" {
-		requestUrl = fmt.Sprintf("https://www.reddit.com/search.json?%s", query.Encode())
+		requestUrl = fmt.Sprintf("%s/search.json?%s", baseRequestUrl, query.Encode())
 	} else {
-		requestUrl = fmt.Sprintf("https://www.reddit.com/r/%s/%s.json?%s", subreddit, sort, query.Encode())
+		requestUrl = fmt.Sprintf("%s/r/%s/%s.json?%s", baseRequestUrl, subreddit, sort, query.Encode())
 	}
 
 	if requestUrlTemplate != "" {
@@ -73,8 +145,20 @@ func FetchSubredditPosts(subreddit, sort, topPeriod, search, commentsUrlTemplate
 		return nil, err
 	}
 
-	// Required to increase rate limit, otherwise Reddit randomly returns 429 even after just 2 requests
-	addBrowserUserAgentHeader(request)
+	if useOauth {
+		var userAgent string
+		if oauth.UserAgent != "" {
+			userAgent = oauth.UserAgent
+		} else {
+			userAgent = fmt.Sprintf("glance/0.1 by %s", oauth.Username)
+		}
+		request.Header.Set("Authorization", fmt.Sprintf("bearer %s", oauth.AccessToken))
+		request.Header.Set("User-Agent", userAgent)
+	} else {
+		// Required to increase rate limit, otherwise Reddit randomly returns 429 even after just 2 requests
+		addBrowserUserAgentHeader(request)
+	}
+
 	responseJson, err := decodeJsonFromRequest[subredditResponseJson](defaultClient, request)
 
 	if err != nil {

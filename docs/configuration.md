@@ -696,7 +696,7 @@ Display a list of posts from a specific subreddit.
 
 > [!WARNING]
 >
-> Reddit does not allow unauthorized API access from VPS IPs, if you're hosting Glance on a VPS you will get a 403 response. As a workaround you can route the traffic from Glance through a VPN or your own HTTP proxy using the `request-url-template` property.
+> Reddit does not allow unauthorized API access from VPS IPs, if you're hosting Glance on a VPS you will get a 403 response. As a workaround you can route the traffic from Glance through a VPN or your own HTTP proxy using the `request-url-template` property. Alternatively, you can try setting up OAuth to login to reddit, which can in some cases allow you to bypass IP bans (see OAuth below).
 
 Example:
 
@@ -720,6 +720,7 @@ Example:
 | top-period | string | no | day |
 | search | string | no | |
 | extra-sort-by | string | no | |
+| oauth | key & value | no | |
 
 ##### `subreddit`
 The subreddit for which to fetch the posts from.
@@ -803,6 +804,21 @@ Keywords to search for. Searching within specific fields is also possible, **tho
 Can be used to specify an additional sort which will be applied on top of the already sorted posts. By default does not apply any extra sorting and the only available option is `engagement`.
 
 The `engagement` sort tries to place the posts with the most points and comments on top, also prioritizing recent over old posts.
+
+#### `oauth`
+Can be used to authenticate with reddit via OAuth, which can in some cases allow you to bypass IP bans. Go to [reddit app preferences](https://www.reddit.com/prefs/apps) and create a `script app` to acquire the necessary authentication information. See [here](https://github.com/reddit-archive/reddit/wiki/OAuth2-Quick-Start-Example) for more information.
+
+##### `client-id`
+Client ID generated when creating a reddit app.
+
+##### `client-secret`
+Client secret generated when creating a reddit app.
+
+##### `username`
+Username for one of the developer accounts for the app. This is required so that login can be performed automatically without further user interaction.
+
+##### `password`
+Associated password for above `username`. This is required so that login can be performed automatically without further user interaction.
 
 ### Search Widget
 Display a search bar that can be used to search for specific terms on various search engines.

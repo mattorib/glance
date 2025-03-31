@@ -175,10 +175,7 @@ type RedditOauth struct {
 }
 
 func (r *RedditOauth) shouldReauthenticate() bool {
-	if r.ExpiresAt.IsZero() {
-		return false
-	}
-	return r.ExpiresAt.IsZero() || !r.ExpiresAt.After(time.Now())
+	return r.ExpiresAt.IsZero() || r.ExpiresAt.Before(time.Now())
 }
 
 func templateRedditCommentsURL(template, subreddit, postId, postPath string) string {
@@ -241,7 +238,7 @@ func fetchSubredditPosts(
 		client = proxyClient
 	}
 
-	useOauth := oauth != nil && oauth.AccessToken != ""
+	useOauth := oauth != nil
 	if useOauth {
 		baseRequestUrl = "https://oauth.reddit.com"
 		if oauth.shouldReauthenticate() {
